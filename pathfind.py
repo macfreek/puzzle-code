@@ -130,6 +130,36 @@ class NoPath(Exception):
             return "No path exists between %s and %s." % \
                     (self.source, self.destination)
 
+class _InverseEdge(Edge):
+    """An inverse edge annuls a forward edge from s to d, and behaves as a 
+    regular edge from d to s with negative weight. It is used for Bhandari's
+    and Suurballe's algorithms."""
+    def __init__(self, edge):
+        self.edge = edge
+        self.source = edge.destination
+        self.destination = edge.source
+        self.ref = edge.ref
+        self.weight = -edge.weight
+    def __str__(self):
+        return "%s(%s, %s, %r, %r)" % (self.__class__.__name__, \
+            str(self.source), str(self.destination), self.ref, self.weight)
+
+class _DoubleEdge(Edge):
+    """A double edge behaves as tow consecutive edges.
+    It is used for Suurballe's algorithm."""
+    def __init__(self, edge1, edge2):
+        self.edge1 = edge1
+        self.edge2 = edge2
+        assert edge1.destination == edge2.source
+        self.source = edge1.source
+        self.destination = edge2.destination
+        self.ref = edge1.ref
+        self.weight = edge1.weight + edge2.weight
+    def __str__(self):
+        return "%s(%s, %s, %r, %r)" % (self.__class__.__name__, \
+            str(self.source), str(self.destination), self.ref, self.weight)
+    
+
 class PathFinder(object):
     """Implmentation of the A* shortest path finding algorithm. 
     This is a variant of Edsgar W. Dijkstra's shortest path algorithm, with 
@@ -160,11 +190,11 @@ class PathFinder(object):
         return 0
     def solve(self, start, destination):
         """Calculate a shortest path"""
-        self.find_shortest_path(start, destination)
+        self.create_tree(start, destination)
         if destination not in self._prev:
             raise NoPath(start, destination)
         self.setsolution(destination)
-    def initialise_path_find(self, start, destination):
+    def initialise_path_find(self, start, destination=None):
         self._prev = {start: None}
         """self._prev[node]: previous node for minimum cost path"""
         self._mincost = {start: start.weight}
@@ -193,10 +223,13 @@ class PathFinder(object):
         if self.debug > 4 and cost >= curcost:
             print("  skip %s (cost %d >= %d)" % (node, cost, curcost))
         return cost < curcost
-    def find_shortest_path(self, start, destination):
+    def create_tree(self, start, destination=None):
         """Calculate a shortest path"""
         if self.debug > 0:
-            print("Find a path", start, "-->", destination)
+            if destination:
+                print("Find a path", start, "-->", destination)
+            else:
+                print("Find a tree from", start)
         self.initialise_path_find(start, destination)
         queue = [start]
         while queue:
@@ -258,39 +291,10 @@ class AStar(PathFinder):
     stop_first_answer = True
     sort_queue = True
 
-class _InverseEdge(Edge):
-    """An inverse edge annuls a forward edge from s to d, and behaves as a 
-    regular edge from d to s with negative weight. It is used for Bhandari's
-    and Suurballe's algorithms."""
-    def __init__(self, edge):
-        self.edge = edge
-        self.source = edge.destination
-        self.destination = edge.source
-        self.ref = edge.ref
-        self.weight = -edge.weight
-    def __str__(self):
-        return "%s(%s, %s, %r, %r)" % (self.__class__.__name__, \
-            str(self.source), str(self.destination), self.ref, self.weight)
-
-class _DoubleEdge(Edge):
-    """A double edge behaves as tow consecutive edges.
-    It is used for Suurballe's algorithm."""
-    def __init__(self, edge1, edge2):
-        self.edge1 = edge1
-        self.edge2 = edge2
-        assert edge1.destination == edge2.source
-        self.source = edge1.source
-        self.destination = edge2.destination
-        self.ref = edge1.ref
-        self.weight = edge1.weight + edge2.weight
-    def __str__(self):
-        return "%s(%s, %s, %r, %r)" % (self.__class__.__name__, \
-            str(self.source), str(self.destination), self.ref, self.weight)
-    
-
 class Bhandari(PathFinder):
     """Implmentation of the Bhandari edge disjoint path finding algorithm. 
     This algorithm finds <k> different, edge disjoint path."""
+    stop_first_answer = False
     def __init__(self, graph, start=None, destination=None, k=2, \
                  heurist_lower_boundary=None, debug=0):
         """heuristic_cost_function returns a lower boundary of the distance
@@ -310,13 +314,13 @@ class Bhandari(PathFinder):
     def solve(self, start, destination, k=2):
         """Calculate a shortest path"""
         for c in range(k):
-            self.find_shortest_path(start, destination)
+            self.create_tree(start, destination)
             if destination not in self._prev:
                 raise NoPath(start, destination, k)
             self.setsolution(destination)
             self.untangle_paths()
             self.stop_first_answer = False # required for negative weight
-    def initialise_path_find(self, start, destination):
+    def initialise_path_find(self, start, destination=None):
         self._prev = {start: None}
         """self._prev[node]: previous node for minimum cost path"""
         self._mincost = {start: start.weight}
@@ -333,6 +337,10 @@ class Bhandari(PathFinder):
             for i, edge in enumerate(path):
                 hop = edge.destination
                 if hop == destination:
+                    # Suurballe prevents hops from occuring in multiple paths.
+                    # However, the destination (and source) are exempt from
+                    # this requirement (they obviously occur in all paths.)
+                    # So don't include the destination in _inverse_edges.
                     continue
                 assert hop not in self._inverse_edges
                 self._inverse_edges[hop] = _InverseEdge(edge)
