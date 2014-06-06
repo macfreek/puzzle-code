@@ -115,7 +115,6 @@ class Graph(UserList):
                 newnode.add_edge(newneighbour, oldedge.ref, oldedge.weight)
         return g
 
-
 class NoPath(Exception):
     """Raised if not path exists between a given source and destination"""
     def __init__(self, source, destination, k=None):
@@ -158,7 +157,6 @@ class _DoubleEdge(Edge):
     def __str__(self):
         return "%s(%s, %s, %r, %r)" % (self.__class__.__name__, \
             str(self.source), str(self.destination), self.ref, self.weight)
-    
 
 class PathFinder(object):
     """Implmentation of the A* shortest path finding algorithm. 
@@ -172,10 +170,6 @@ class PathFinder(object):
     sort_queue = True # Set to False if the tree can be looped in any order
     def __init__(self, graph, start=None, destination=None, \
                  heurist_lower_boundary=None, debug=0):
-        """heuristic_cost_function returns a lower boundary of the distance
-        between node1 and node2. In case this function always returns 0, the 
-        A* algorithm is the same as the Dijkstra algorithm.
-        """
         self.graph = graph      # list of all nodes
         self.path = None        # list of edges in the shortest path
         self.hops = None        # list of node in the shortest path
@@ -187,13 +181,17 @@ class PathFinder(object):
         if start and destination:
             self.solve(start, destination)
     def heurist_lower_boundary(self, node1, node2):
+        """heurist_lower_boundary returns a lower boundary of the distance
+        between node1 and node2. In case this function always returns 0, the 
+        A* algorithm is the same as the Dijkstra algorithm.
+        """
         return 0
     def solve(self, start, destination):
         """Calculate a shortest path"""
         self.create_tree(start, destination)
         if destination not in self._prev:
             raise NoPath(start, destination)
-        self.setsolution(destination)
+        self.trace_path(destination)
     def initialise_path_find(self, start, destination=None):
         self._prev = {start: None}
         """self._prev[node]: previous node for minimum cost path"""
@@ -258,13 +256,16 @@ class PathFinder(object):
                 if not self._better_path(neighbour, totalcost):
                     continue
                 self._add_to_queue(queue, neighbour, totalcost, edge, destination)
-    def setsolution(self, destination):
-        self.cost = self._mincost[destination]
+    def trace_path(self, destination):
         # path is a list of edges
         # hops is a list of nodes
+        try:
+            self.cost = self._mincost[destination]
+            edge = self._prev[destination]
+        except KeyError:
+            raise NoPath(None, destination)
         self.path = []
         self.hops = [destination]
-        edge = self._prev[destination]
         while edge != None:
             self.path = [edge] + self.path
             self.hops = [edge.source] + self.hops
@@ -291,16 +292,14 @@ class AStar(PathFinder):
     stop_first_answer = True
     sort_queue = True
 
+# TODO: implement variant as described on https://en.wikipedia.org/wiki/Suurballe%27s_algorithm (which is faster as it may use Dijkstra instead of Bellman-Ford the second path find)
+
 class Bhandari(PathFinder):
     """Implmentation of the Bhandari edge disjoint path finding algorithm. 
     This algorithm finds <k> different, edge disjoint path."""
     stop_first_answer = False
     def __init__(self, graph, start=None, destination=None, k=2, \
                  heurist_lower_boundary=None, debug=0):
-        """heuristic_cost_function returns a lower boundary of the distance
-        between node1 and node2. In case this function always returns 0, the 
-        A* algorithm is the same as the Dijkstra algorithm.
-        """
         self.graph = graph      # list of nodes
         self.path = []          # list of all found shortest paths
         self.hops = []          # list of hops in each shortest path
@@ -313,13 +312,16 @@ class Bhandari(PathFinder):
             self.solve(start, destination, k)
     def solve(self, start, destination, k=2):
         """Calculate a shortest path"""
+        _orig_stop_first_answer = self.stop_first_answer
         for c in range(k):
             self.create_tree(start, destination)
             if destination not in self._prev:
+                self.stop_first_answer = _orig_stop_first_answer # reset to original value
                 raise NoPath(start, destination, k)
-            self.setsolution(destination)
+            self.trace_path(destination)
             self.untangle_paths()
-            self.stop_first_answer = False # required for negative weight
+            self.stop_first_answer = False # required for negative weights
+        self.stop_first_answer = _orig_stop_first_answer # reset to original value
     def initialise_path_find(self, start, destination=None):
         self._prev = {start: None}
         """self._prev[node]: previous node for minimum cost path"""
@@ -348,6 +350,7 @@ class Bhandari(PathFinder):
         # Both:
         # remove edges in self.path
         # add inverse edges for edges in self.path
+        # TODO: shouldn't the cost of the node also be taken into account?
         for edge in node.edges:
             if edge not in self._forward_edges:
                 yield edge
@@ -376,12 +379,15 @@ class Bhandari(PathFinder):
                        [e.destination for e in self.path[k]]
         self.cost[k] = sum(e.weight for e in self.path[k]) + \
                        sum(n.weight for n in self.hops[k])
-    def setsolution(self, destination):
+    def trace_path(self, destination):
         """Trace a path from the destination back to start."""
         # path is a list of edges
         # hops is a list of nodes
+        try:
+            edge = self._prev[destination]
+        except KeyError:
+            raise NoPath(None, destination)
         path = []
-        edge = self._prev[destination]
         while edge != None:
             assert edge not in path
             if isinstance(edge, _DoubleEdge):
@@ -446,10 +452,8 @@ class Suurballe(Bhandari):
         self._minpathcost[node] = cost + \
                  self.heurist_lower_boundary(node, destination)
         self._prev[node] = trace
-            
         if self.debug > 2:
             print("  append %s with cost: %d" % (node, cost))
-
         # Do not reinsert if it is already in the queue!
         if node not in queue:
             queue.append(node)
