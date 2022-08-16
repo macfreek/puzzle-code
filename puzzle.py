@@ -1,7 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-""" 
+"""
 Generic Puzzle Solving Framework
 
 Based on: version 9, (27-Mar-2002) of Raymond Hettinger's short library'
@@ -66,32 +66,39 @@ class Puzzle:
     """The class represents a puzzle, and all instances represent a state of the puzzle."""
     pos = ""                    # default starting position
     goal = ""                   # ending position used by isgoal()
+    strategy = BREADTH_FIRST
     def __init__(self, pos = None):
-        if pos: self.pos = pos
+        if pos:
+            self.pos = pos
     def __str__(self):          # returns a string representation of the position for printing the object
         return str(self.pos)
     def canonical(self):        # returns a string representation after adjusting for symmetry
-        return str(self.pos)
+        return str(self)
     def isgoal(self):
         return self.pos == self.goal
     def __iter__(self):         # yields all possible next move, reachable from the current state
         raise StopIteration
-    def solve(pos, pop_pos = BREADTH_FIRST):
-        queue, solution = [], []
-        trail = { pos.canonical(): None }
-        while not pos.isgoal():
-            for nextmove in pos:
+    def solve(self):
+        queue = []
+        solution = []
+        trail = { self.canonical(): None }
+        state = self
+        while not state.isgoal():
+            for nextmove in state:
                 c = nextmove.canonical()
                 if c in trail:
                     continue
-                trail[c] = pos
+                trail[c] = state
                 queue.append(nextmove)
+            #print("queue length", len(queue))
+            #if len(queue) % 10 == 0:
+            #    print(state)
             if len(queue) == 0:
                 raise NoSolution() # unsolvable
-            pos = queue.pop(pop_pos)
-        while pos:
-            solution.insert(0, pos)
-            pos = trail[pos.canonical()]
+            state = queue.pop(state.strategy)
+        while state:
+            solution.insert(0, state)
+            state = trail[state.canonical()]
         return solution
 
 # Sample Puzzles start here
@@ -116,7 +123,7 @@ class JugFill3( Puzzle ):
                 dup[j] += qty
                 yield self.__class__(tuple(dup))
 
-class JugFill5( Puzzle ):
+class JugFill5( JugFill3 ):
     """
     Given a four empty jugs with 3,6 11, and 14 liter capacities and a full
     jug with 16 liters, find a sequence of pours leaving four liters
@@ -125,22 +132,13 @@ class JugFill5( Puzzle ):
     pos = (0,0,0,0,16)
     capacity = (3,6,11,14,16)
     goal = (0,4,4,4,4)
-    def __iter__(self):
-        for i in range(len(self.pos)):
-            for j in range(len(self.pos)):
-                if i==j: continue
-                qty = min( self.pos[i], self.capacity[j] - self.pos[j] )
-                if not qty: continue
-                dup = list( self.pos )
-                dup[i] -= qty
-                dup[j] += qty
-                yield self.__class__(tuple(dup))
 
 class EightQueens( Puzzle ):
     """
     Place 8 queens on chess board such that no two queens attack each other
     """
     pos = ()
+    strategy = DEPTH_FIRST
     def isgoal(self):
         return len(self.pos) == 8
     def __str__(self):
@@ -200,6 +198,7 @@ class MarblePuzzle( Puzzle ):
     """
     pos = (1,(1,1,1,1,0,0,0,-1,-1,-1,-1))
     goal =  (-1,-1,-1,-1,0,0,0,1,1,1,1)
+    strategy = DEPTH_FIRST
     def isgoal( self ):
         return self.pos[1] == self.goal
     def __iter__( self ):
@@ -372,11 +371,11 @@ class HVBlockSlidePuzzle( Puzzle ):
                 yield self.__class__(newmove)
 
 
-def Show(cls, search_method = BREADTH_FIRST):
+def Show(cls):
     import time
     print(cls.__name__, cls.__doc__)
     t = time.time()
-    solution = cls().solve(search_method)
+    solution = cls().solve()
     for s in solution:
         print(s)
     d = time.time() - t
@@ -384,12 +383,12 @@ def Show(cls, search_method = BREADTH_FIRST):
     print()
 
 if __name__ == '__main__':
-    Show(JugFill3)
+    # Show(JugFill3)
     Show(JugFill5)
-    Show(EightQueens, DEPTH_FIRST)
-    Show(TriPuzzle)
-    Show(MarblePuzzle, DEPTH_FIRST)
+    # Show(EightQueens)
+    # Show(TriPuzzle)
+    # Show(MarblePuzzle)
     Show(RowboatPuzzle)
-    Show(BlockSlidePuzzle)
+    # Show(BlockSlidePuzzle)
     Show(HVBlockSlidePuzzle)
     
